@@ -1,9 +1,9 @@
 import os
-from typing import BinaryIO, Union, DefaultDict
+from typing import BinaryIO, Union, Iterable, Iterator
 import regex as re
 import multiprocessing as mp
 from functools import partial
-
+import json
 
 
 def find_chunk_boundaries(
@@ -55,6 +55,8 @@ def find_chunk_boundaries(
 def preprocess_for_bpe(text: str, special_tokens: list[str]) -> dict[tuple[bytes, ...], int]:
     """
     Properly preprocess text by splitting on special tokens.
+    Return the count of each byte word in the text.
+    TODO: Make it suitable for BPETokenizer.
     """    
     # 转义并构建分割模式
     escaped_tokens = [re.escape(token) for token in special_tokens]
@@ -308,7 +310,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tu
     
     # Step 1: Find chunk boundaries
     with open(input_path, "rb") as f:
-        num_processes = 4  # Use all available CPU cores
+        num_processes = 10  # Use all available CPU cores
         print(f"Using {num_processes} processes")
         
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
@@ -359,6 +361,269 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tu
     
     print("BPE training completed!")
     return vocab, merges
+
+
+class BPETokenizer:
+
+    def __init__(self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[str] | None = None):
+        """
+        Construct a tokenizer from a given vocabulary, 
+        list of merges, and (optionally) a list of special tokens.
+        """
+        self.vocab = vocab
+        self.merges = merges
+        self.special_tokens = special_tokens if special_tokens is not None else []
+        self.reversed_vocab = {v: k for k, v in self.vocab.items()}
+        self.merge_priority = {merge: i for i, merge in enumerate(self.merges)}
+
+    @classmethod
+    def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str] | None = None):
+        """
+        Class method that constructs and return a Tokenizer 
+        from a serialized vocabulary and list of merges 
+        (in the same format that your BPE training code output) 
+        and (optionally) a list of special tokens.
+        """
+        with open(vocab_filepath, 'r', encoding='utf-8') as f:
+            vocab = json.load(f)
+        
+        with open(merges_filepath, 'r', encoding='utf-8') as f:
+            merges = [tuple(line.strip().split()) for line in f]
+        
+        return BPETokenizer(vocab, merges, special_tokens)
+
+    def _split_by_special_tokens(self, text: str, special_tokens: list[str]) -> list[str]:
+        """
+        Split text on special tokens while preserving the special tokens.
+        Handles overlapping special tokens by prioritizing longer tokens.
+        
+        Args:
+            text: Input text
+            special_tokens: List of special tokens to split on
+            
+        Returns:
+            List of text parts, with special tokens preserved as separate elements
+            
+        Example:
+            text = "Hello world! <|endoftext|> Great!" 
+            special_tokens = ["<|endoftext|>"]
+            result = ['Hello world! ', '<|endoftext|>', ' Great!']
+        """
+        if not special_tokens:
+            return [text]
+        
+        # 按长度降序排序，确保较长的token优先匹配
+        special_tokens_sorted = sorted(special_tokens, key=lambda x: -len(x))
+        
+        # 使用贪婪匹配策略：从左到右扫描，优先匹配最长的特殊标记
+        result = []
+        i = 0
+        
+        while i < len(text):
+            found_token = None
+            found_length = 0
+            
+            # 检查从当前位置开始是否匹配任何特殊标记
+            for token in special_tokens_sorted:
+                if text[i:].startswith(token):
+                    found_token = token
+                    found_length = len(token)
+                    break  # 由于按长度排序，第一个匹配的就是最长的
+            
+            if found_token:
+                # 如果前面有非特殊标记的文本，先添加到结果
+                if i > 0 and (not result or result[-1] != ''):
+                    # 找到上一个特殊标记的结束位置
+                    last_pos = 0
+                    for j in range(len(result)):
+                        if result[j] in special_tokens:
+                            # 计算这个特殊标记在原文本中的位置
+                            current_pos = 0
+                            for k in range(j + 1):
+                                current_pos += len(result[k])
+                            last_pos = current_pos
+                    
+                    if i > last_pos:
+                        prefix = text[last_pos:i]
+                        if prefix:
+                            result.append(prefix)
+                
+                # 添加找到的特殊标记
+                result.append(found_token)
+                i += found_length
+            else:
+                # 没有匹配到特殊标记，跳到下一个字符
+                i += 1
+        
+        # 处理剩余的文本
+        if result:
+            # 计算所有已处理文本的长度
+            processed_length = 0
+            for part in result:
+                processed_length += len(part)
+            
+            if processed_length < len(text):
+                remaining = text[processed_length:]
+                if remaining:
+                    result.append(remaining)
+        else:
+            # 没有找到任何特殊标记，返回原文本
+            result = [text]
+        
+        # 过滤掉空字符串，但保持特殊标记
+        filtered_result = []
+        for part in result:
+            if part or part in special_tokens:
+                filtered_result.append(part)
+        
+        return filtered_result
+
+    def _pretokenize(self, text: str, special_tokens: list[str]) -> Iterator[Union[tuple[bytes], bytes]]:
+        """
+        Pre-tokenize the input text into byte words.
+        This is a helper function that converts the text into a list of byte words.
+        This function should not drop any special tokens.
+        """
+        # 使用改进的分割函数来处理重叠的特殊标记
+        parts = self._split_by_special_tokens(text, special_tokens)
+
+        PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
+        for part in parts:
+            if not part:  # 跳过空字符串
+                continue
+                
+            if part in special_tokens:
+                # 特殊标记作为整体保留
+                byte_word = part.encode('utf-8')
+                yield byte_word
+            else:
+                # 普通文本使用PAT进行tokenization
+                tokens = re.findall(PAT, part)
+                for token_text in tokens:
+                    if token_text:
+                        # Convert each token to bytes
+                        byte_word = tuple(bytes([b]) for b in token_text.encode('utf-8'))
+                        yield byte_word
+
+    def encode(self, text: str) -> list[int]:
+        """
+        Encode an input text into a sequence of token IDs.
+        Step 1: Pre-tokenize the text into byte words.
+        Step 2: Apply BPE merges to the byte words and return the token IDs.
+        This function should yield token IDs for each byte word.
+        """
+        assert self.vocab is not None, "Vocabulary must be initialized before encoding"
+        assert self.merges is not None, "Merges must be initialized before encoding"
+        # Step 1: Pre-tokenize the text into byte words
+        byte_words = self._pretokenize(text, self.special_tokens)
+        bytes_special_tokens = [token.encode('utf-8') for token in self.special_tokens]
+        # Step 2: Apply BPE merges to the byte words
+        encoded_ids = []
+        for byte_word in byte_words:
+            if isinstance(byte_word, bytes):
+                # This is a special token
+                if byte_word in bytes_special_tokens:
+                    # Convert special token to its ID
+                    token_id = self.reversed_vocab.get(byte_word, None)
+                    if token_id is not None:
+                        encoded_ids.append(token_id)
+            elif isinstance(byte_word, tuple):
+                # This is a byte word (tuple of bytes)
+                for token_id in self._merge_byte_word(byte_word):
+                    encoded_ids.append(token_id)
+            else:
+                raise ValueError(f"Unexpected byte word type: {type(byte_word)}")
+        return encoded_ids
+            
+    def _merge_byte_word(self, byte_word: tuple[bytes, ...]) -> Iterator[int]:
+        """
+        Merge a byte word using the BPE merges defined in self.merges.
+        This function should yield the token IDs for the merged byte word.
+        Uses merge_priority for efficient merging.
+        """
+        # Convert tuple of bytes to a list for easier manipulation
+        word = list(byte_word)
+        
+        # Keep applying merges until no more merges are possible
+        while len(word) >= 2:
+            # Find all possible merge pairs in the current word
+            possible_merges = []
+            
+            for i in range(len(word) - 1):
+                pair = (word[i], word[i + 1])
+                if pair in self.merge_priority:
+                    # Store the merge pair, its position, and its priority
+                    possible_merges.append((self.merge_priority[pair], i, pair))
+            
+            if not possible_merges:
+                # No more merges possible
+                break
+            
+            # Sort by priority (lower number = higher priority, applied earlier)
+            possible_merges.sort(key=lambda x: x[0])
+            
+            # Apply the highest priority merge
+            _, merge_pos, merge_pair = possible_merges[0]
+            
+            # Merge the two bytes at the specified position
+            merged_bytes = merge_pair[0] + merge_pair[1]
+            word[merge_pos] = merged_bytes
+            word.pop(merge_pos + 1)
+            
+            # Continue with the updated word
+        
+        # Convert the final merged word to token IDs
+        for token_bytes in word:
+            # Look up the token ID in the vocabulary
+            token_id = self.reversed_vocab.get(token_bytes, None)
+            
+            if token_id is not None:
+                yield token_id
+            else:
+                # If not found in vocab, break down to individual bytes
+                # This handles unknown tokens by falling back to byte-level
+                if isinstance(token_bytes, bytes):
+                    for byte_val in token_bytes:
+                        # Single bytes should be in vocab with their byte value as ID
+                        single_byte = bytes([byte_val])
+                        single_byte_id = self.reversed_vocab.get(single_byte, byte_val)
+                        yield single_byte_id
+                else:
+                    # This shouldn't happen, but handle it gracefully
+                    raise ValueError(f"Unexpected token type: {type(token_bytes)}")
+        
+
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        """
+        Given an iterable of strings (e.g., a Python file handle), 
+        return a generator that lazily yields token IDs. This is 
+        required for memory-efficient tokenization of large files 
+        that we cannot directly load into memory.
+        """
+        for text in iterable:
+            yield from self.encode(text)
+
+    def decode(self, ids: list[int]) -> str:
+        """
+        Decode a sequence of token IDs into text. Note that 
+        input IDs are not guaranteed to map to valid Unicode strings.
+        """
+        # copied from ...
+        tokens = bytes()
+        vocab_size = len(self.vocab)
+        replacement_char = "\uFFFD"
+
+        for token_id in ids:
+            if token_id < vocab_size:
+                token = self.vocab[token_id]
+            else:
+                token = bytes(replacement_char, encoding='utf-8')
+
+            tokens += token
+        decoded = tokens.decode(encoding='utf-8', errors='replace')
+
+        return decoded 
 
 
 def test_preprocess_for_bpe():
@@ -419,9 +684,9 @@ def test_merge():
     print("Merge test passed for num_merge = 6!")
 
 def test_train_bpe():
-    input_path = "/root/autodl-tmp/data/TinyStoriesV2-GPT4-valid.txt"  # Replace with your test file path
-    vocab_size = 500
-    special_tokens = ["<|endoftext|>", "[MASK]", "\\n"]
+    input_path = "/root/autodl-tmp/data/TinyStoriesV2-GPT4-train.txt"  # Replace with your test file path
+    vocab_size = 10000
+    special_tokens = ["<|endoftext|>"]
 
     vocab, merges = train_bpe(input_path, vocab_size, special_tokens)
     
@@ -429,8 +694,107 @@ def test_train_bpe():
     print("Number of merges:", len(merges))
     print("First 10 merges:", merges[:10])
 
+    # TODO: Serialize the resulting vocabulary and merges to disk for further inspection
+
+def test_bpetokenizer_pretokenize():
+    text1 = "Hello world! <|endoftext|>Great!"
+    special_tokens = ["<|endoftext|>"]
+    tokenizer = BPETokenizer({}, [])
+    pretokenized1 = list(tokenizer._pretokenize(text1, special_tokens))
+
+    expected1 = [
+        (b'H', b'e', b'l', b'l', b'o'),
+        (b' ', b'w', b'o', b'r', b'l', b'd'),
+        (b'!',),
+        (b' ',),
+        b'<|endoftext|>',
+        (b'G', b'r', b'e', b'a', b't'),
+        (b'!',)
+    ]
+
+    assert pretokenized1 == expected1, f"Expected {expected1}, but got {pretokenized1}"
+
+    text2 = "Hello Hello world!"
+    pretokenized2 = list(tokenizer._pretokenize(text2, special_tokens))
+    expected2 = [
+        (b'H', b'e', b'l', b'l', b'o'),
+        (b' ', b'H', b'e', b'l', b'l', b'o'),
+        (b' ', b'w', b'o', b'r', b'l', b'd'),
+        (b'!',)
+    ]
+
+    assert pretokenized2 == expected2, f"Expected {expected2}, but got {pretokenized2}"
+
+    print("Pre-tokenization test passed!")
+
+def test_overlapping_special_tokens():
+    """
+    Test handling of overlapping special tokens like <|endoftext|> and <|endoftext|><|endoftext|>
+    """
+    # 创建一个简单的tokenizer来测试
+    vocab = {i: bytes([i]) for i in range(256)}  # 基础字节词汇表
+    vocab[256] = b'<|endoftext|>'
+    vocab[257] = b'<|endoftext|><|endoftext|>'
+    
+    merges = []
+    special_tokens = ["<|endoftext|>", "<|endoftext|><|endoftext|>"]
+    
+    tokenizer = BPETokenizer(vocab, merges, special_tokens)
+    
+    # 测试文本
+    test_string = "Hello, how <|endoftext|><|endoftext|> are you?<|endoftext|>"
+    
+    # 首先测试预标记化
+    pretokenized = list(tokenizer._pretokenize(test_string, special_tokens))
+    print("Pretokenized:", pretokenized)
+    
+    # 验证双重特殊标记被正确识别
+    assert b'<|endoftext|><|endoftext|>' in pretokenized
+    assert pretokenized.count(b'<|endoftext|><|endoftext|>') == 1
+    assert pretokenized.count(b'<|endoftext|>') == 1
+    
+    # 测试编码
+    ids = tokenizer.encode(test_string)
+    print("Encoded IDs:", ids)
+    
+    # 测试解码
+    decoded = tokenizer.decode(ids)
+    print("Decoded:", decoded)
+    
+    # 验证往返一致性
+    assert decoded == test_string
+    
+    print("Overlapping special tokens test passed!")
+
+def test_bpetokenizer_encode():
+    # 示例使用
+    vocab = {
+        0: b' ', 1: b'a', 2: b'c', 3: b'e', 4: b'h', 
+        5: b't', 6: b'th', 7: b' c', 8: b' a', 
+        9: b'the', 10: b' at'
+    }
+
+    merges = [
+        (b't', b'h'), 
+        (b' ', b'c'), 
+        (b' ', b'a'), 
+        (b'th', b'e'), 
+        (b' a', b't')
+    ]
+
+    tokenizer = BPETokenizer(vocab, merges)
+
+    # 测试示例
+    text = "the cat ate"
+    encoded = tokenizer.encode(text)
+    assert list(encoded) == [9, 7, 1, 5, 10, 3], "Encoding did not match expected output"
+    print("Encoding test passed!")
 
 if __name__ == "__main__":
     # test_preprocess_for_bpe()
     # test_merge()
-    test_train_bpe()
+    # test_train_bpe()
+    # test_bpetokenizer_pretokenize()
+    test_bpetokenizer_encode()
+    test_overlapping_special_tokens()
+    print("All tests passed!")
