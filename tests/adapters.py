@@ -415,7 +415,50 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.transformer import TransformerLM
+    transformer_lm = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        n_heads=num_heads,
+        d_ff=d_ff,
+        max_seq_len=in_indices.shape[1],
+        rope_theta=rope_theta,
+        device=in_indices.device
+    )
+    transformer_lm.embedding.load_state_dict({"weight": weights["token_embeddings.weight"]})
+    for layer_idx in range(num_layers):
+        transformer_lm.layers[layer_idx].self_attention.query_linear.load_state_dict(
+            {"weight": weights[f"layers.{layer_idx}.attn.q_proj.weight"]}
+        )
+        transformer_lm.layers[layer_idx].self_attention.key_linear.load_state_dict(
+            {"weight": weights[f"layers.{layer_idx}.attn.k_proj.weight"]}
+        )
+        transformer_lm.layers[layer_idx].self_attention.value_linear.load_state_dict(
+            {"weight": weights[f"layers.{layer_idx}.attn.v_proj.weight"]}
+        )
+        transformer_lm.layers[layer_idx].self_attention.out_linear.load_state_dict(
+            {"weight": weights[f"layers.{layer_idx}.attn.output_proj.weight"]}
+        )
+        transformer_lm.layers[layer_idx].norm1.load_state_dict(
+            {"gain": weights[f"layers.{layer_idx}.ln1.weight"]}
+        )
+        transformer_lm.layers[layer_idx].ffn.linear1.load_state_dict(
+            {"weight": weights[f"layers.{layer_idx}.ffn.w1.weight"]}
+        )
+        transformer_lm.layers[layer_idx].ffn.linear2.load_state_dict(
+            {"weight": weights[f"layers.{layer_idx}.ffn.w2.weight"]}
+        )
+        transformer_lm.layers[layer_idx].ffn.linear3.load_state_dict(
+            {"weight": weights[f"layers.{layer_idx}.ffn.w3.weight"]}
+        )
+        transformer_lm.layers[layer_idx].norm2.load_state_dict(
+            {"gain": weights[f"layers.{layer_idx}.ln2.weight"]}
+        )
+    transformer_lm.norm_final.load_state_dict({"gain": weights["ln_final.weight"]})
+    transformer_lm.lm_head.load_state_dict({"weight": weights["lm_head.weight"]})
+    return transformer_lm(in_indices)
 
 
 def run_rmsnorm(
@@ -457,7 +500,8 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    from cs336_basics.ffn import silu
+    return silu(in_features)  # type: ignore[return-value]
 
 
 def run_get_batch(
@@ -515,7 +559,8 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    from cs336_basics.loss import cross_entropy_loss
+    return cross_entropy_loss(inputs, targets)  # type: ignore[return-value]
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -527,14 +572,16 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    from cs336_basics.gradient_clipping import gradient_clipping
+    gradient_clipping(list(parameters), max_l2_norm)
 
 
 def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    from cs336_basics.optimizer import AdamW
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
@@ -562,7 +609,14 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    from cs336_basics.lr_scheduler import learning_rate_schedule
+    return learning_rate_schedule(
+        t=it,
+        amax=max_learning_rate,
+        amin=min_learning_rate,
+        warmup_steps=warmup_iters,
+        decay_steps=cosine_cycle_iters,
+    )
 
 
 def run_save_checkpoint(

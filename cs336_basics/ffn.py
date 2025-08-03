@@ -22,4 +22,16 @@ class PositionWiseFeedForward(nn.Module):
         return self.linear2(x)
 
     def _silu(self, x: torch.Tensor) -> torch.Tensor:
-        return x * torch.sigmoid(x)
+        return silu(x)
+
+def silu(x: torch.Tensor) -> torch.Tensor:
+    """
+    Apply the SiLU activation function to the input tensor.
+    
+    Args:
+        x: Input tensor.
+    
+    Returns:
+        Tensor with SiLU applied element-wise.
+    """
+    return x * torch.sigmoid(x)

@@ -65,7 +65,6 @@ class TransformerLM(nn.Module):
         ])
         self.norm_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
-        # self.out_softmax = softmax
         self.context_length = context_length
         self.device = device
 
