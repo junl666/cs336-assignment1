@@ -26,18 +26,32 @@ class Rope(nn.Module):
         assume that the token positions are a tensor of shape (..., seq_len) specifying the token
         positions of x along the sequence dimension.
         """
+        no_head_dim = False
         if token_positions is None:
             seq_len = x.size(-2)
-            token_positions = torch.arange(seq_len, device=self.device).expand(x.size(0), seq_len)
-        rope_values = self.rope[token_positions]  # shape (..., seq_len, d_k, d_k)
+            token_positions = torch.arange(seq_len, device=self.device).expand(x.size(0), seq_len) # shape (batch_size, seq_len)
+        if x.dim() == 3: # shape (batch_size, seq_len, d_k) no head dimension
+            no_head_dim = True
+            x = x.unsqueeze(1)  # shape (batch_size, 1, seq_len, d_k)
+        # Now x is of shape (batch_size, n_heads, seq_len, d_k)
+        rope = repeat(self.rope, "max_seq_len d_i d_j -> b max_seq_len d_i d_j", b=x.size(0)) # shape (batch_size, max_seq_len, d_k, d_k)
+        one_hot_positions = torch.nn.functional.one_hot(token_positions, num_classes=self.max_seq_len).to(x.dtype) # shape (batch_size, seq_len, max_seq_len)
+        rope_values = einsum(one_hot_positions, rope, "... seq max_seq, ... max_seq d_i d_j -> ... seq d_i d_j")  # shape (batch_size, seq_len, d_k, d_k)
+        rope_values = repeat(rope_values, "b seq d_i d_j -> b h seq d_i d_j", h=x.size(1))  # shape (batch_size, n_heads, seq_len, d_k, d_k)
         # return einsum(x, rope_values, "... seq d_k, ... seq d_k d_k -> ... seq d_k")  # wrong！！！！！
-        return einsum(x, rope_values, "... seq j, ... seq i j -> ... seq i")  # shape (..., seq_len, d_k)
+        # print(f"Rope forward: x shape {x.shape}, rope_values shape {rope_values.shape}")
+        # x.shape (batch_size, n_heads, seq_len, d_k)
+        result = einsum(x, rope_values, "... seq j, ... seq i j -> ... seq i")  # shape (..., seq_len, d_k)
+        if no_head_dim:
+            result = result.squeeze(1)
+        return result 
+
 
     def _create_rope(self) -> torch.Tensor:
         """
         Create the RoPE buffer based on the theta, d_k, and max_seq_len.
         Returns:
-            A tensor of shape (seq_len, d_k, d_k) containing the RoPE values.
+            A tensor of shape (max_seq_len, d_k, d_k) containing the RoPE values.
         """
         # TODO: Need a way to optimize
         # Create a tensor of positions

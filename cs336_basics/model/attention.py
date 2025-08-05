@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 from einops import einsum, rearrange, repeat
-from cs336_basics.linear import Linear
-from cs336_basics.rope import Rope
+from cs336_basics.model.linear import Linear
+from cs336_basics.model.rope import Rope
 
 def softmax(x: torch.Tensor, dim: int = -1) -> torch.Tensor:
     """

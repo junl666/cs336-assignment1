@@ -310,7 +310,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tu
     
     # Step 1: Find chunk boundaries
     with open(input_path, "rb") as f:
-        num_processes = 10  # Use all available CPU cores
+        num_processes = 4  # Use all available CPU cores
         print(f"Using {num_processes} processes")
         
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
@@ -384,11 +384,55 @@ class BPETokenizer:
         (in the same format that your BPE training code output) 
         and (optionally) a list of special tokens.
         """
+        # Read vocab file in text format: "token_id bytes_value"
+        vocab = {}
         with open(vocab_filepath, 'r', encoding='utf-8') as f:
-            vocab = json.load(f)
+            for line in f:
+                line = line.strip()
+                if line:
+                    parts = line.split(' ', 1)  # Split only on first space
+                    if len(parts) == 2:
+                        token_id = int(parts[0])
+                        # Parse bytes value (e.g., "b'hello'" -> b'hello')
+                        bytes_str = parts[1]
+                        if bytes_str.startswith("b'") and bytes_str.endswith("'"):
+                            # Handle bytes literal format
+                            bytes_content = bytes_str[2:-1]  # Remove b' and '
+                            # Decode escape sequences
+                            bytes_value = bytes_content.encode('utf-8').decode('unicode_escape').encode('latin1')
+                        elif bytes_str.startswith('b"') and bytes_str.endswith('"'):
+                            # Handle bytes literal format with double quotes
+                            bytes_content = bytes_str[2:-1]  # Remove b" and "
+                            bytes_value = bytes_content.encode('utf-8').decode('unicode_escape').encode('latin1')
+                        else:
+                            # Fallback: treat as string and encode to bytes
+                            bytes_value = bytes_str.encode('utf-8')
+                        vocab[token_id] = bytes_value
         
+        # Read merges file: "bytes1 bytes2"
+        merges = []
         with open(merges_filepath, 'r', encoding='utf-8') as f:
-            merges = [tuple(line.strip().split()) for line in f]
+            for line in f:
+                line = line.strip()
+                if line:
+                    parts = line.split(' ', 1)  # Split only on first space
+                    if len(parts) == 2:
+                        # Parse bytes values similar to vocab
+                        bytes1_str, bytes2_str = parts
+                        
+                        def parse_bytes_string(s):
+                            if s.startswith("b'") and s.endswith("'"):
+                                content = s[2:-1]
+                                return content.encode('utf-8').decode('unicode_escape').encode('latin1')
+                            elif s.startswith('b"') and s.endswith('"'):
+                                content = s[2:-1]
+                                return content.encode('utf-8').decode('unicode_escape').encode('latin1')
+                            else:
+                                return s.encode('utf-8')
+                        
+                        bytes1 = parse_bytes_string(bytes1_str)
+                        bytes2 = parse_bytes_string(bytes2_str)
+                        merges.append((bytes1, bytes2))
         
         return BPETokenizer(vocab, merges, special_tokens)
 

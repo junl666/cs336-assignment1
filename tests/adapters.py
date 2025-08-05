@@ -28,7 +28,7 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-    from cs336_basics.linear import Linear
+    from cs336_basics.model.linear import Linear
     linear = Linear(in_features=d_in, out_features=d_out)
     linear.load_state_dict({"weight": weights})
     linear.eval()
@@ -54,7 +54,7 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    from cs336_basics.embedding import Embedding
+    from cs336_basics.model.embedding import Embedding
 
     embedding = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
     embedding.load_state_dict({"weight": weights})
@@ -91,7 +91,7 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    from cs336_basics.ffn import PositionWiseFeedForward
+    from cs336_basics.model.ffn import PositionWiseFeedForward
     swiglu = PositionWiseFeedForward(d_model=d_model, d_ff=d_ff, device=in_features.device, dtype=in_features.dtype)
     swiglu.load_state_dict({
         "linear1.weight": w1_weight,
@@ -120,7 +120,7 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    from cs336_basics.attention import scaled_dot_product_attention
+    from cs336_basics.model.attention import scaled_dot_product_attention
     return scaled_dot_product_attention(query=Q, key=K, value=V, mask=mask)  # type: ignore[return-value]
 
 
@@ -155,7 +155,7 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    from cs336_basics.attention import MultiheadSelfAttention
+    from cs336_basics.model.attention import MultiheadSelfAttention
     mla = MultiheadSelfAttention(
         d_model=d_model,
         n_heads=num_heads,
@@ -205,7 +205,7 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    from cs336_basics.attention import MultiheadSelfAttention
+    from cs336_basics.model.attention import MultiheadSelfAttention
     mha = MultiheadSelfAttention(
         d_model= d_model,
         n_heads=num_heads,
@@ -239,7 +239,7 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    from cs336_basics.rope import Rope
+    from cs336_basics.model.rope import Rope
     rope = Rope(theta=theta, d_k=d_k, max_seq_len=max_seq_len, device=in_query_or_key.device)
     return rope(in_query_or_key, token_positions)
 
@@ -314,7 +314,7 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    from cs336_basics.transformer import TransformerBlock
+    from cs336_basics.model.transformer import TransformerBlock
     transformer_block = TransformerBlock(
         d_model=d_model,
         n_heads=num_heads,
@@ -415,7 +415,7 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    from cs336_basics.transformer import TransformerLM
+    from cs336_basics.model.transformer import TransformerLM
     transformer_lm = TransformerLM(
         vocab_size=vocab_size,
         context_length=context_length,
@@ -481,7 +481,7 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    from cs336_basics.normalization import RMSNorm
+    from cs336_basics.model.normalization import RMSNorm
 
     rms_norm = RMSNorm(d_model, eps)
     rms_norm.load_state_dict({"gain": weights})
@@ -500,7 +500,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    from cs336_basics.ffn import silu
+    from cs336_basics.model.ffn import silu
     return silu(in_features)  # type: ignore[return-value]
 
 
@@ -524,7 +524,13 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    from cs336_basics.dataloader import data_loading
+    return data_loading(
+        x=dataset,
+        batch_size=batch_size,
+        context_length=context_length,
+        device=device
+    )  # type: ignore[return-value]
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -540,7 +546,7 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    from cs336_basics.attention import softmax
+    from cs336_basics.model.attention import softmax
     return softmax(in_features, dim=dim)  # type: ignore[return-value]
 
 
@@ -635,7 +641,8 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    from cs336_basics.dataloader import save_checkpoint
+    save_checkpoint(model, optimizer, iteration, out)
 
 
 def run_load_checkpoint(
@@ -656,7 +663,8 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    from cs336_basics.dataloader import load_checkpoint
+    return load_checkpoint(src, model, optimizer)
 
 
 def get_tokenizer(
@@ -679,7 +687,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    from cs336_basics.BPETokenizer import BPETokenizer
+    from cs336_basics.tokenizer.BPETokenizer import BPETokenizer
     return BPETokenizer(
         vocab=vocab,
         merges=merges,
@@ -714,5 +722,5 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    from cs336_basics.BPETokenizer import train_bpe
+    from cs336_basics.tokenizer.BPETokenizer import train_bpe
     return train_bpe(input_path, vocab_size, special_tokens, **kwargs)  # type: ignore[return-value]

@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from cs336_basics.linear import Linear
+from cs336_basics.model.linear import Linear
 
 
 class PositionWiseFeedForward(nn.Module):
