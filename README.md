@@ -1,5 +1,10 @@
 # CS336 Spring 2025 Assignment 1: Basics
 
+- For training, refer to the [TRAINING_USAGE.md](./TRAINING_USAGE.md) file.
+
+- For decoding, refer to the [decoding.py](./cs336_basics/decoding.py) and [generate_text.sh](./generate_text.sh) script.
+
+---
 For a full description of the assignment, see the assignment handout at
 [cs336_spring2025_assignment1_basics.pdf](./cs336_spring2025_assignment1_basics.pdf)
 
