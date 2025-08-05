@@ -33,6 +33,7 @@ def data2token_streaming(data_path: str, vocab_path: str, merges_path: str, outp
     Uses tokenizer.encode_iterable for optimal memory usage.
     """
     import os
+    import time
     tokenizer = BPETokenizer.from_files(vocab_filepath=vocab_path, merges_filepath=merges_path)
     
     # Get file size for progress tracking
@@ -42,6 +43,8 @@ def data2token_streaming(data_path: str, vocab_path: str, merges_path: str, outp
     def text_chunks():
         """Generator that yields text chunks from file with progress tracking"""
         processed_bytes = 0
+        start_time = time.time()
+        
         with open(data_path, 'r', encoding='utf-8', buffering=chunk_size) as f:
             while True:
                 chunk = f.read(chunk_size)
@@ -53,12 +56,33 @@ def data2token_streaming(data_path: str, vocab_path: str, merges_path: str, outp
                 processed_bytes += chunk_bytes
                 progress = min(100.0, (processed_bytes / file_size) * 100)
                 
+                # Calculate time information
+                elapsed_time = time.time() - start_time
+                if progress > 0:
+                    estimated_total_time = elapsed_time * 100 / progress
+                    remaining_time = estimated_total_time - elapsed_time
+                else:
+                    remaining_time = 0
+                
+                # Format time display
+                def format_time(seconds):
+                    if seconds < 60:
+                        return f"{seconds:.1f}s"
+                    elif seconds < 3600:
+                        return f"{seconds/60:.1f}m"
+                    else:
+                        return f"{seconds/3600:.1f}h"
+                
                 # Simple progress bar
                 bar_length = 50
                 filled_length = int(bar_length * progress / 100)
                 bar = '█' * filled_length + '-' * (bar_length - filled_length)
-                print(f'\rProgress: |{bar}| {progress:.1f}% ({processed_bytes:,}/{file_size:,} bytes)', end='', flush=True)
                 
+                elapsed_str = format_time(elapsed_time)
+                remaining_str = format_time(remaining_time)
+
+                print(f'\rProgress: |{bar}| {progress:.1f}% ({processed_bytes:,}/{file_size:,} bytes) - time_used: {elapsed_str}, remaining: {remaining_str}', end='', flush=True)
+
                 yield chunk
         print()  # New line after progress bar
     

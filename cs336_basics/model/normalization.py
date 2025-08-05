@@ -21,6 +21,7 @@ class RMSNorm(nn.Module):
 
         # perform RMS normalization
         rms_value = x.pow(2).mean(dim=-1, keepdim=True).add(self.eps).sqrt()
+        # print(f"x.device = {x.device}, x.dtype = {x.dtype}, gain.device = {self.gain.device}, gain.dtype = {self.gain.dtype}")
         x = x / rms_value
         x = x * self.gain
         return x.to(in_type)

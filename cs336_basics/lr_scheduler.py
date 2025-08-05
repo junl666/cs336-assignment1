@@ -3,8 +3,8 @@ import math
 
 def learning_rate_schedule(
     t: int,
-    amax: float,
-    amin: float,
+    max_lr: float,
+    min_lr: float,
     warmup_steps: int,
     decay_steps: int,
 ) -> float:
@@ -22,9 +22,9 @@ def learning_rate_schedule(
         float: Learning rate at step `t`.
     """
     if t < warmup_steps:
-        return amax * t / warmup_steps
+        return max_lr * t / warmup_steps
     elif (t >= warmup_steps) and (t <= decay_steps):
         decay = 0.5 * (1 + math.cos(math.pi * (t - warmup_steps) / (decay_steps - warmup_steps)))
-        return amin + (amax - amin) * decay
+        return min_lr + (max_lr - min_lr) * decay
     else:
-        return amin
+        return min_lr

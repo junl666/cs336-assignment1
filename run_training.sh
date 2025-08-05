@@ -7,8 +7,9 @@ set -e  # Exit on any error
 
 # Default configuration
 CONFIG=${1:-"small"}
-DATA_DIR=${2:-"./data"}
+DATA_DIR=${2:-"/root/autodl-tmp/data"}
 OUTPUT_DIR=${3:-"./experiments"}
+DEBUG_RATIO=1.0  # Default to full data
 
 # Create directories
 mkdir -p "$OUTPUT_DIR"
@@ -19,8 +20,9 @@ mkdir -p "$OUTPUT_DIR/logs"
 VOCAB_PATH="$DATA_DIR/tokenizer.vocab"
 MERGES_PATH="$DATA_DIR/tokenizer.merges"
 TRAIN_DATA="$DATA_DIR/train_data.npy"
-VAL_DATA="$DATA_DIR/val_data.npy"
+VAL_DATA="$DATA_DIR/valid_data.npy"
 CHECKPOINT_DIR="$OUTPUT_DIR/checkpoints"
+LOG_DIR="$OUTPUT_DIR/logs"
 
 # Check if required files exist
 if [ ! -f "$VOCAB_PATH" ]; then
@@ -43,65 +45,46 @@ fi
 
 # Configuration-specific parameters
 case $CONFIG in
-    "debug"|"tiny")
-        echo "Using DEBUG/TINY configuration for quick testing..."
+    "debug")
+        echo "Using DEBUG configuration for quick testing on a subset of the dataset."
+        DEBUG_RATIO=0.2     # Use 20% of the data
         VOCAB_SIZE=10000
-        D_MODEL=128
-        N_LAYERS=2
-        N_HEADS=2
-        D_FF=512
-        BATCH_SIZE=8
-        CONTEXT_LENGTH=128
-        MAX_ITERS=1000
-        LOG_INTERVAL=50
+        D_MODEL=512
+        N_LAYERS=4
+        N_HEADS=16
+        D_FF=1344
+        BATCH_SIZE=16
+        CONTEXT_LENGTH=256
+        MAX_ITERS=2000
+        MAX_LR=3e-4
+        MIN_LR=3e-5
+        WARMUP_STEPS=200
+        DECAY_STEPS=1500
+        LOG_INTERVAL=100
         EVAL_INTERVAL=200
         SAVE_INTERVAL=500
         ;;
     "small")
-        echo "Using SMALL configuration..."
+        echo "Using SMALL configuration on the full dataset..."
         VOCAB_SIZE=10000
         D_MODEL=512
-        N_LAYERS=8
-        N_HEADS=8
-        D_FF=2048
-        BATCH_SIZE=16
-        CONTEXT_LENGTH=512
-        MAX_ITERS=50000
-        LOG_INTERVAL=100
-        EVAL_INTERVAL=1000
-        SAVE_INTERVAL=5000
-        ;;
-    "medium")
-        echo "Using MEDIUM configuration..."
-        VOCAB_SIZE=20000
-        D_MODEL=768
-        N_LAYERS=12
-        N_HEADS=12
-        D_FF=3072
-        BATCH_SIZE=32
-        CONTEXT_LENGTH=1024
-        MAX_ITERS=100000
-        LOG_INTERVAL=100
-        EVAL_INTERVAL=2000
-        SAVE_INTERVAL=10000
-        ;;
-    "large")
-        echo "Using LARGE configuration..."
-        VOCAB_SIZE=50000
-        D_MODEL=1024
-        N_LAYERS=24
+        N_LAYERS=4
         N_HEADS=16
-        D_FF=4096
-        BATCH_SIZE=64
-        CONTEXT_LENGTH=2048
-        MAX_ITERS=200000
+        D_FF=1344
+        BATCH_SIZE=16
+        CONTEXT_LENGTH=256
+        MAX_ITERS=10000
+        MAX_LR=3e-4
+        MIN_LR=3e-5
+        WARMUP_STEPS=1000
+        DECAY_STEPS=8000
         LOG_INTERVAL=100
-        EVAL_INTERVAL=5000
-        SAVE_INTERVAL=20000
+        EVAL_INTERVAL=500
+        SAVE_INTERVAL=500
         ;;
     *)
         echo "Unknown configuration: $CONFIG"
-        echo "Available configurations: debug, tiny, small, medium, large"
+        echo "Available configurations: debug, small"
         exit 1
         ;;
 esac
@@ -113,8 +96,13 @@ echo "Starting training with configuration: $CONFIG"
 echo "Data directory: $DATA_DIR"
 echo "Output directory: $OUTPUT_DIR"
 echo "Log file: $LOG_FILE"
+echo "TensorBoard logs: $LOG_DIR"
 echo "Model parameters: d_model=$D_MODEL, n_layers=$N_LAYERS, n_heads=$N_HEADS"
 echo "Training parameters: batch_size=$BATCH_SIZE, context_length=$CONTEXT_LENGTH, max_iters=$MAX_ITERS"
+echo "Learning rate schedule: max_lr=$MAX_LR, min_lr=$MIN_LR, warmup_steps=$WARMUP_STEPS, decay_steps=$DECAY_STEPS"
+echo ""
+echo "To monitor training progress with TensorBoard, run:"
+echo "  tensorboard --logdir $LOG_DIR"
 echo ""
 
 # Validation data parameter
@@ -129,6 +117,7 @@ fi
 
 # Run training
 python -m cs336_basics.train \
+    --debug_ratio $DEBUG_RATIO \
     --vocab_path "$VOCAB_PATH" \
     --merges_path "$MERGES_PATH" \
     --train_data "$TRAIN_DATA" \
@@ -140,18 +129,26 @@ python -m cs336_basics.train \
     --d_ff $D_FF \
     --batch_size $BATCH_SIZE \
     --context_length $CONTEXT_LENGTH \
-    --learning_rate 3e-4 \
+    --max_lr $MAX_LR \
+    --min_lr $MIN_LR \
+    --warmup_steps $WARMUP_STEPS \
+    --decay_steps $DECAY_STEPS \
     --weight_decay 0.01 \
     --max_grad_norm 1.0 \
     --max_iters $MAX_ITERS \
     --checkpoint_dir "$CHECKPOINT_DIR" \
+    --log_dir "$LOG_DIR" \
     --log_interval $LOG_INTERVAL \
     --eval_interval $EVAL_INTERVAL \
     --save_interval $SAVE_INTERVAL \
     --device auto \
-    # 2>&1 | tee "$LOG_FILE"
+    2>&1 | tee "$LOG_FILE"
 
 echo ""
 echo "Training completed!"
 echo "Checkpoints saved in: $CHECKPOINT_DIR"
+echo "TensorBoard logs saved in: $LOG_DIR"
 echo "Log file: $LOG_FILE"
+echo ""
+echo "To view training metrics, run:"
+echo "  tensorboard --logdir $LOG_DIR"

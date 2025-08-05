@@ -27,9 +27,9 @@ class TransformerBlock(nn.Module):
             theta=theta,
             device=device,
         )
-        self.ffn = PositionWiseFeedForward(d_model, d_ff)
-        self.norm1 = RMSNorm(d_model)
-        self.norm2 = RMSNorm(d_model)
+        self.ffn = PositionWiseFeedForward(d_model, d_ff, device=device)
+        self.norm1 = RMSNorm(d_model, device=device, dtype=torch.float32)
+        self.norm2 = RMSNorm(d_model, device=device, dtype=torch.float32)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -63,8 +63,8 @@ class TransformerLM(nn.Module):
         self.layers = nn.ModuleList([
             TransformerBlock(d_model, n_heads, d_ff, max_seq_len, rope_theta, device) for _ in range(num_layers)
         ])
-        self.norm_final = RMSNorm(d_model)
-        self.lm_head = Linear(d_model, vocab_size)
+        self.norm_final = RMSNorm(d_model, device=device, dtype=torch.float32)
+        self.lm_head = Linear(d_model, vocab_size, device=device)
         self.context_length = context_length
         self.device = device
 

@@ -618,8 +618,8 @@ def run_get_lr_cosine_schedule(
     from cs336_basics.lr_scheduler import learning_rate_schedule
     return learning_rate_schedule(
         t=it,
-        amax=max_learning_rate,
-        amin=min_learning_rate,
+        max_lr=max_learning_rate,
+        min_lr=min_learning_rate,
         warmup_steps=warmup_iters,
         decay_steps=cosine_cycle_iters,
     )

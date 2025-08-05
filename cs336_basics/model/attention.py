@@ -67,10 +67,10 @@ class MultiheadSelfAttention(nn.Module):
 
         # Linear
         # TODO: Make it using one Linear layer
-        self.query_linear = Linear(d_model, n_heads * d_k)
-        self.key_linear = Linear(d_model, n_heads * d_k)
-        self.value_linear = Linear(d_model, n_heads * d_v)
-        self.out_linear = Linear(n_heads * d_v, d_model)
+        self.query_linear = Linear(d_model, n_heads * d_k, device=device)
+        self.key_linear = Linear(d_model, n_heads * d_k, device=device)
+        self.value_linear = Linear(d_model, n_heads * d_v, device=device)
+        self.out_linear = Linear(n_heads * d_v, d_model, device=device)
 
         # RoPE
         self.use_rope = use_rope
