@@ -1,0 +1,34 @@
+Using SMALL configuration...
+Generating text from checkpoint: experiments/checkpoints/checkpoint_final.pt
+Prompt: "One day, a curious cat was"
+Model config: small
+Parameters: d_model=512, n_layers=4, n_heads=16
+Generation: max_tokens=100, temperature=0.8, top_p=0.9
+
+Loading tokenizer...
+Tokenizer loaded.
+Loading model from experiments/checkpoints/checkpoint_final.pt
+Model loaded successfully. Trained for 10000 iterations.
+Generating text with prompt: 'One day, a curious cat was'
+Temperature: 0.8, Top-p: 0.9
+Max new tokens: 100
+--------------------------------------------------
+Step  10: ... walking in the p
+Step  20: ... walking in the park. The cat saw a
+Step  30: ...walking in the park. The cat saw a big tree and th
+Step  40: .... The cat saw a big tree and thought it would be f
+Step  50: ...g tree and thought it would be fun to play with it
+Step  60: ...it would be fun to play with it.
+As the cat played
+Step  70: ...to play with it.
+As the cat played with the tree, 
+Step  80: ...the cat played with the tree, it started to shake.
+Step  90: ...the tree, it started to shake. The cat was scared 
+Step 100: ...rted to shake. The cat was scared of the tree for 
+
+==================================================
+GENERATED TEXT:
+==================================================
+One day, a curious cat was walking in the park. The cat saw a big tree and thought it would be fun to play with it.
+As the cat played with the tree, it started to shake. The cat was scared of the tree for 
+==================================================
