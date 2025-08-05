@@ -2,6 +2,8 @@
 
 - For training, refer to the [TRAINING_USAGE.md](./TRAINING_USAGE.md) file.
 
+- Training result on TinyStories dataset can be found in `traning_results/` directory.
+
 - For decoding, refer to the [decoding.py](./cs336_basics/decoding.py) and [generate_text.sh](./generate_text.sh) script.
 
 ---
